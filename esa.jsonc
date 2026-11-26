@@ -1,5 +1,5 @@
 {
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "npm install",
   "buildCommand": "npm run build",
   "assets": {
     "directory": "./public"
