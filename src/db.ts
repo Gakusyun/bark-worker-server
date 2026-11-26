@@ -6,6 +6,11 @@ export interface BasicKV {
   delete(key: string): Promise<void>;
 }
 
+// keep read and write paths consistent, and avoid characters that are
+// awkward in KV keys
+const sanitizeDeviceKey = (key: string) =>
+  (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
+
 export class KVAdapter implements DBAdapter {
   kv: BasicKV;
   constructor(kv: BasicKV) {
@@ -25,9 +30,9 @@ export class KVAdapter implements DBAdapter {
   }
 
   async deviceTokenByKey(key: string) {
-    const deviceKey =
-      (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
-    const devices = await this.kv.get(`device_${deviceKey}`, { type: 'text' });
+    const devices = await this.kv.get(`device_${sanitizeDeviceKey(key)}`, {
+      type: 'text',
+    });
     return devices;
   }
 
@@ -36,21 +41,21 @@ export class KVAdapter implements DBAdapter {
       return this.deleteDeviceByKey(key);
     }
     const deviceToken = (token || '').replace(/[^a-z0-9]/g, '') || '';
-    const k = `device_${key}`;
-    // updateCount
-    this.kv.get(k).then((value) => {
-      if (!value) {
-        this.updateCount(1);
-      }
-    });
+    const k = `device_${sanitizeDeviceKey(key)}`;
+    const existing = await this.kv.get(k, { type: 'text' });
+    if (!existing) {
+      await this.updateCount(1);
+    }
     return this.kv.put(k, deviceToken);
   }
 
   async deleteDeviceByKey(key: string) {
-    const deviceKey =
-      (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
-    this.updateCount(-1);
-    return this.kv.delete(`device_${deviceKey}`);
+    const k = `device_${sanitizeDeviceKey(key)}`;
+    const existing = await this.kv.get(k, { type: 'text' });
+    if (existing) {
+      await this.updateCount(-1);
+    }
+    return this.kv.delete(k);
   }
 
   async saveAuthorizationToken(token: string, ttl: number) {
@@ -60,7 +65,7 @@ export class KVAdapter implements DBAdapter {
 
   async getAuthorizationToken() {
     const res = await this.kv.get('authToken');
-    if (!res || res.expireAt > Date.now()) {
+    if (!res || res.expireAt <= Date.now()) {
       return undefined;
     }
     return res.token;

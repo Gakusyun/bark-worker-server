@@ -1,6 +1,29 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { defineConfig, type RsbuildConfig } from '@rsbuild/core';
 
-const defines: Record<string, string> = {};
+const pkg = JSON.parse(readFileSync('package.json', 'utf-8'));
+
+const getGitCommit = () => {
+  try {
+    return execSync('git rev-parse HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return '';
+  }
+};
+
+// e.g. 2026-11-26 12:34:56
+const buildDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+const defines: Record<string, string> = {
+  __BUILD_VERSION__: JSON.stringify(pkg.version),
+  __BUILD_DATE__: JSON.stringify(buildDate),
+  __BUILD_COMMIT__: JSON.stringify(getGitCommit()),
+};
 
 for (const key of [
   'URL_PREFIX',

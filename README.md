@@ -35,7 +35,7 @@ pnpm build
 * `ALLOW_NEW_DEVICE` 是否允许新设备注册，默认为 `true`
 * `ALLOW_QUERY_NUMS` 是否允许查询设备数量，默认为 `true`
 * `MAX_BATCH_PUSH_COUNT` 批量推送最大数量，默认不限制
-* `BASIC_AUTH` 是否启用 HTTP Basic Auth，默认不启用
+* `BASIC_AUTH` HTTP Basic Auth 凭证，格式为 `用户名:密码`，默认不启用。启用后除 `/ping`、`/register`、`/healthz` 外的接口均需要认证
 * `URL_PREFIX` 部署路径，默认为 `/`
   * 例如：当你填写部署路径为 `/bark` 时，在 Bark App 中填写的服务器地址为 `https://你的域名/bark`，注意开头必须要有“/”，末尾不要有“/”
 * `APNS_URL` 自定义 APNs 服务地址

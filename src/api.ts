@@ -2,6 +2,14 @@ import { push, regenerateAuthToken } from './apns';
 import type { DBAdapter, Options } from './type';
 import { getTimestamp, newShortUUID } from './utils';
 
+// Injected by rsbuild at build time. The fallback keeps direct source imports
+// (e.g. tests) working.
+const BUILD_VERSION =
+  typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'dev';
+const BUILD_DATE = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '';
+const BUILD_COMMIT =
+  typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : '';
+
 export class APIError extends Error {
   code: number;
   message: string;
@@ -23,7 +31,7 @@ const buildSuccess = (data?: any, message = 'success') => ({
 
 export type PushParameters = Partial<{
   device_key: string;
-  device_keys: string[];
+  device_keys: string[] | string;
 
   title: string;
   subtitle: string;
@@ -62,7 +70,7 @@ export class API {
       throw new APIError(400, 'device token is empty');
     }
 
-    if (deviceToken.length > 128) {
+    if (deviceToken.length > 160) {
       throw new APIError(400, 'device token is invalid');
     }
 
@@ -105,16 +113,24 @@ export class API {
     }
 
     return {
-      version: 'v2.2.6',
-      build: '2025-12-03 10:51:22',
+      version: BUILD_VERSION ? `v${BUILD_VERSION.replace(/^v/, '')}` : 'dev',
+      build: BUILD_DATE,
       arch: 'js/esa',
-      commit: '18d1037eab7a2310f595cfd31ea49b444f6133f2',
+      commit: BUILD_COMMIT,
       time: Date.now(),
       devices: devices,
     };
   }
 
   async push(parameters: PushParameters) {
+    // upstream accepts both an array and a comma-separated string
+    if (typeof parameters.device_keys === 'string') {
+      parameters.device_keys = parameters.device_keys
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean);
+    }
+
     // batch
     if (
       Array.isArray(parameters.device_keys) &&
@@ -132,8 +148,8 @@ export class API {
         }
       }
 
-      return buildSuccess({
-        data: await Promise.all(
+      return buildSuccess(
+        await Promise.all(
           parameters.device_keys.map(async (deviceKey) => {
             try {
               const res = await this.pushOne(deviceKey, parameters);
@@ -152,7 +168,7 @@ export class API {
             }
           }),
         ),
-      });
+      );
     }
 
     const deviceKey = parameters.device_key;
@@ -174,11 +190,6 @@ export class API {
     if (!deviceToken) {
       throw new APIError(400, 'device token invalid');
     }
-    if (deviceToken.length > 128) {
-      await this.db.deleteDeviceByKey(deviceKey);
-      throw new APIError(400, 'invalid device token, has been removed');
-    }
-
     const title = parameters.title || undefined;
     const subtitle = parameters.subtitle || undefined;
     const body = parameters.body || undefined;
@@ -265,16 +276,16 @@ export class API {
         return buildSuccess(undefined);
       }
       if (
-        response.status === 410 ||
-        (response.status === 400 && response.message.includes('BadDeviceToken'))
+        resp.status === 410 ||
+        (resp.status === 400 && resp.message.includes('BadDeviceToken'))
       ) {
         await this.db.deleteDeviceByKey(deviceKey);
       }
 
       if (
         retryCount === 0 &&
-        response.status === 403 &&
-        response.message.includes('ExpiredProviderToken')
+        resp.status === 403 &&
+        resp.message.includes('ExpiredProviderToken')
       ) {
         // Token expired, try again
         await regenerateAuthToken(this.db);
@@ -284,7 +295,7 @@ export class API {
         );
       }
 
-      throw new APIError(response.status, `push failed: ${response.message}`);
+      throw new APIError(resp.status, `push failed: ${resp.message}`);
     };
 
     const response = await push(this.options, deviceToken, headers, aps);

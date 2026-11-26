@@ -130,12 +130,43 @@ const registerV1 = async (app: Hono, api: API) => {
   );
 };
 
+// same as upstream: these paths stay public when Basic Auth is enabled
+const AUTH_WHITELIST = ['/ping', '/register', '/healthz'];
+
+const normalizeUrlPrefix = (prefix?: string) =>
+  (prefix || '').replace(/\/+$/, '');
+
+const isAuthWhitelisted = (path: string) =>
+  AUTH_WHITELIST.some((p) => path === p || path.startsWith(`${p}/`));
+
 export const createHono = (options: Options) => {
   const api = new API(options);
 
   const app = new Hono();
 
   const router = app.basePath(options.urlPrefix || '/');
+
+  const urlPrefix = normalizeUrlPrefix(options.urlPrefix);
+
+  router.use('*', async (c, next) => {
+    const path =
+      urlPrefix && c.req.path.startsWith(urlPrefix)
+        ? c.req.path.slice(urlPrefix.length) || '/'
+        : c.req.path;
+    if (isAuthWhitelisted(path)) {
+      return next();
+    }
+    if (!validateBasicAuth(c.req.header('Authorization'), options.basicAuth)) {
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: {
+          'content-type': 'text/plain',
+          'WWW-Authenticate': 'Basic',
+        },
+      });
+    }
+    return next();
+  });
 
   router.get('/register', async (c) => {
     return c.json(
@@ -160,18 +191,7 @@ export const createHono = (options: Options) => {
 
   router.all('/healthz', (c) => c.text('ok'));
 
-  router.all('/info', async (c) => {
-    if (!validateBasicAuth(c.req.header('Authorization'), options.basicAuth)) {
-      return new Response('Unauthorized', {
-        status: 401,
-        headers: {
-          'content-type': 'text/plain',
-          'WWW-Authenticate': 'Basic',
-        },
-      });
-    }
-    return c.json(await api.info());
-  });
+  router.all('/info', async (c) => c.json(await api.info()));
 
   // base push
   router.post('/push', async (c) => c.json(await api.push(await parseBody(c))));
