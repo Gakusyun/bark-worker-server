@@ -1,48 +1,41 @@
 import { type Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { API, APIError, type PushParameters } from './api';
+import { API, APIError } from './api';
 import type { Options } from './type';
 import { getTimestamp, validateBasicAuth } from './utils';
 
-const parseParam = (t: string) =>
-  decodeURIComponent(t.replaceAll('\\+', '%20'));
+const parseParam = (t: string) => {
+  try {
+    return decodeURIComponent(t.replaceAll('\\+', '%20'));
+  } catch {
+    throw new APIError(400, 'url path parse failed');
+  }
+};
 
-const parseBody = async <T = any>(c: Context): Promise<T> => {
+const parseBody = async <T = Record<string, any>>(c: Context): Promise<T> => {
   const isJSON = c.req.header('Content-Type')?.startsWith('application/json');
   return isJSON ? await c.req.json() : ((await c.req.parseBody()) as T);
 };
 
-const parseQuery = (c: Context, exclude?: Array<keyof PushParameters>) => {
-  const list: Array<keyof PushParameters> = [
-    'title',
-    'subtitle',
-    'body',
-    'sound',
-    'group',
-    'call',
-    'isArchive',
-    'icon',
-    'ciphertext',
-    'level',
-    'volume',
-    'url',
-    'image',
-    'copy',
-    'badge',
-    'autoCopy',
-    'action',
-    'iv',
-    'id',
-    'delete',
-    'markdown',
-  ];
-  const result: PushParameters = {};
-  for (const k of list) {
-    if (!exclude || !exclude.includes(k)) {
-      const v = c.req.query(k);
-      if (v) {
-        result[k] = v as any;
-      }
+const lowerCaseKeys = (source: Record<string, any>) => {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(source || {})) {
+    result[key.toLowerCase()] = value;
+  }
+  return result;
+};
+
+const parseQuery = (c: Context) => lowerCaseKeys(c.req.query());
+
+const parseBodyParams = async (c: Context) =>
+  lowerCaseKeys(await parseBody<Record<string, any>>(c));
+
+const parsePath = (c: Context, keys: string[]) => {
+  const result: Record<string, any> = {};
+  for (const key of keys) {
+    const value = c.req.param(key);
+    if (value !== undefined) {
+      result[key] = parseParam(value);
     }
   }
   return result;
@@ -52,16 +45,17 @@ const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key', async (c) =>
     c.json(
       await api.push({
-        ...parseQuery(c, ['device_key']),
-        device_key: parseParam(c.req.param('device_key')),
+        ...parseQuery(c),
+        ...parsePath(c, ['device_key']),
       }),
     ),
   );
   app.post('/:device_key', async (c) =>
     c.json(
       await api.push({
-        ...(await parseBody(c)),
-        device_key: parseParam(c.req.param('device_key')),
+        ...parseQuery(c),
+        ...(await parseBodyParams(c)),
+        ...parsePath(c, ['device_key']),
       }),
     ),
   );
@@ -69,18 +63,17 @@ const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key/:body', async (c) =>
     c.json(
       await api.push({
-        ...parseQuery(c, ['device_key', 'body']),
-        device_key: parseParam(c.req.param('device_key')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...parsePath(c, ['device_key', 'body']),
       }),
     ),
   );
   app.post('/:device_key/:body', async (c) =>
     c.json(
       await api.push({
-        ...(await parseBody(c)),
-        device_key: parseParam(c.req.param('device_key')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...(await parseBodyParams(c)),
+        ...parsePath(c, ['device_key', 'body']),
       }),
     ),
   );
@@ -88,20 +81,17 @@ const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key/:title/:body', async (c) =>
     c.json(
       await api.push({
-        ...parseQuery(c, ['device_key', 'title', 'body']),
-        device_key: parseParam(c.req.param('device_key')),
-        title: parseParam(c.req.param('title')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...parsePath(c, ['device_key', 'title', 'body']),
       }),
     ),
   );
   app.post('/:device_key/:title/:body', async (c) =>
     c.json(
       await api.push({
-        ...(await parseBody(c)),
-        device_key: parseParam(c.req.param('device_key')),
-        title: parseParam(c.req.param('title')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...(await parseBodyParams(c)),
+        ...parsePath(c, ['device_key', 'title', 'body']),
       }),
     ),
   );
@@ -109,22 +99,17 @@ const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key/:title/:subtitle/:body', async (c) =>
     c.json(
       await api.push({
-        ...parseQuery(c, ['device_key', 'title', 'subtitle', 'body']),
-        device_key: parseParam(c.req.param('device_key')),
-        title: parseParam(c.req.param('title')),
-        subtitle: parseParam(c.req.param('subtitle')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...parsePath(c, ['device_key', 'title', 'subtitle', 'body']),
       }),
     ),
   );
   app.post('/:device_key/:title/:subtitle/:body', async (c) =>
     c.json(
       await api.push({
-        ...(await parseBody(c)),
-        device_key: parseParam(c.req.param('device_key')),
-        title: parseParam(c.req.param('title')),
-        subtitle: parseParam(c.req.param('subtitle')),
-        body: parseParam(c.req.param('body')),
+        ...parseQuery(c),
+        ...(await parseBodyParams(c)),
+        ...parsePath(c, ['device_key', 'title', 'subtitle', 'body']),
       }),
     ),
   );
@@ -189,6 +174,10 @@ export const createHono = (options: Options) => {
     );
   });
 
+  router.get('/register/:device_key', async (c) =>
+    c.json(await api.checkRegister(parseParam(c.req.param('device_key')))),
+  );
+
   router.all('/ping', (c) => c.json(api.ping()));
 
   router.all('/healthz', (c) => c.text('ok'));
@@ -196,7 +185,14 @@ export const createHono = (options: Options) => {
   router.all('/info', async (c) => c.json(await api.info()));
 
   // base push
-  router.post('/push', async (c) => c.json(await api.push(await parseBody(c))));
+  router.post('/push', async (c) =>
+    c.json(
+      await api.push({
+        ...(await parseBodyParams(c)),
+        ...parseQuery(c),
+      }),
+    ),
+  );
 
   // compat v1 API
   registerV1(router as unknown as Hono, api);

@@ -54,7 +54,19 @@ export type PushParameters = Partial<{
   id: string;
   delete: boolean;
   markdown: string;
-}>;
+  ttl: number | string;
+  ext_params: Record<string, any>;
+}> &
+  Record<string, any>;
+
+// delete accepts 1/1.0/"1" (upstream) and boolean true (worker convenience)
+const isDelete = (value: unknown) =>
+  value === true ||
+  value === 1 ||
+  value === '1' ||
+  value === 1.0 ||
+  value === '1.0' ||
+  value === 'true';
 
 export class API {
   db: DBAdapter;
@@ -114,6 +126,17 @@ export class API {
     });
   }
 
+  async checkRegister(deviceKey: string) {
+    const record = await this.db.deviceTokenByKey(deviceKey);
+    if (record === undefined || record === null || !record.token) {
+      throw new APIError(400, 'device token not found');
+    }
+    return buildSuccess({
+      device_key: deviceKey,
+      device_type: record.type,
+    });
+  }
+
   ping() {
     return buildSuccess(undefined, 'pong');
   }
@@ -134,7 +157,32 @@ export class API {
     };
   }
 
-  async push(parameters: PushParameters) {
+  private normalizeParameters(parameters: PushParameters) {
+    const normalized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(parameters || {})) {
+      if (value !== undefined && value !== null) {
+        normalized[key.toLowerCase()] = value;
+      }
+    }
+
+    const extParams = normalized.ext_params;
+    if (
+      extParams &&
+      typeof extParams === 'object' &&
+      !Array.isArray(extParams)
+    ) {
+      for (const [key, value] of Object.entries(extParams)) {
+        if (value !== undefined && value !== null) {
+          normalized[key.toLowerCase()] = value;
+        }
+      }
+    }
+    return normalized;
+  }
+
+  async push(rawParameters: PushParameters) {
+    const parameters = this.normalizeParameters(rawParameters);
+
     // upstream accepts both an array and a comma-separated string
     if (typeof parameters.device_keys === 'string') {
       parameters.device_keys = parameters.device_keys
@@ -190,7 +238,7 @@ export class API {
     return this.pushOne(deviceKey, parameters);
   }
 
-  private async pushOne(deviceKey: string, parameters: PushParameters) {
+  private async pushOne(deviceKey: string, parameters: Record<string, any>) {
     const record = await this.db.deviceTokenByKey(deviceKey);
     if (record === undefined || record === null) {
       throw new APIError(
@@ -206,8 +254,9 @@ export class API {
     const title = parameters.title || undefined;
     const subtitle = parameters.subtitle || undefined;
     const body = parameters.body || undefined;
+    const deletePush = isDelete(parameters.delete);
 
-    let sound = parameters.sound || undefined;
+    let sound = parameters.sound ? String(parameters.sound) : undefined;
     if (sound) {
       if (!sound.endsWith('.caf')) {
         sound += '.caf';
@@ -217,8 +266,8 @@ export class API {
     }
 
     // https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification
-    const aps = {
-      aps: parameters.delete
+    const aps: Record<string, any> = {
+      aps: deletePush
         ? {
             'content-available': 1,
             'mutable-content': 1,
@@ -228,58 +277,42 @@ export class API {
               title: title,
               subtitle: subtitle,
               body: !title && !subtitle && !body ? 'Empty Message' : body,
-              'launch-image': undefined,
-              'title-loc-key': undefined,
-              'title-loc-args': undefined,
-              'subtitle-loc-key': undefined,
-              'subtitle-loc-args': undefined,
-              'loc-key': undefined,
-              'loc-args': undefined,
             },
-            badge: undefined,
             sound: sound,
             'thread-id': parameters.group,
             category: 'myNotificationCategory',
-            'content-available': undefined,
             'mutable-content': 1,
-            'target-content-id': undefined,
-            'interruption-level': undefined,
-            'relevance-score': undefined,
-            'filter-criteria': undefined,
-            'stale-date': undefined,
-            'content-state': undefined,
-            timestamp: undefined,
-            event: undefined,
-            'dimissal-date': undefined,
-            'attributes-type': undefined,
-            attributes: undefined,
           },
-      // ExtParams
-      group: parameters.group,
-      call: parameters.call,
-      isarchive: parameters.isArchive,
-      icon: parameters.icon,
-      ciphertext: parameters.ciphertext,
-      level: parameters.level,
-      volume: parameters.volume,
-      url: parameters.url,
-      copy: parameters.copy,
-      badge: parameters.badge,
-      autocopy: parameters.autoCopy,
-      action: parameters.action,
-      iv: parameters.iv,
-      image: parameters.image,
-      id: parameters.id,
-      delete: parameters.delete,
-      markdown: parameters.markdown,
     };
 
+    // Everything that is not part of the APNs envelope is forwarded as an
+    // extension parameter, so ttl and custom parameters reach the client.
+    const reserved = new Set([
+      'device_key',
+      'device_keys',
+      'ext_params',
+      'title',
+      'subtitle',
+      'body',
+      'sound',
+    ]);
+    for (const [key, value] of Object.entries(parameters)) {
+      if (reserved.has(key) || value === undefined || value === null) {
+        continue;
+      }
+      aps[key] = String(value);
+    }
+
     const headers: Record<string, string> = {
-      'apns-push-type': parameters.delete ? 'background' : 'alert',
+      'apns-push-type': deletePush ? 'background' : 'alert',
       'apns-topic': record.type === 'watchos' ? WATCHOS_TOPIC : IOS_TOPIC,
     };
     if (parameters.id) {
-      headers['apns-collapse-id'] = parameters.id;
+      headers['apns-collapse-id'] = String(parameters.id);
+    }
+    const ttl = Number(parameters.ttl);
+    if (Number.isFinite(ttl) && ttl > 0) {
+      headers['apns-expiration'] = String(getTimestamp() + ttl);
     }
 
     const handleResponse = async (
