@@ -5,7 +5,7 @@ import { getTimestamp, newShortUUID } from './utils';
 // Injected by rsbuild at build time. The fallback keeps direct source imports
 // (e.g. tests) working.
 const BUILD_VERSION =
-  typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'dev';
+  typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : '';
 const BUILD_DATE = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '';
 const BUILD_COMMIT =
   typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : '';
@@ -78,7 +78,7 @@ export class API {
   }
 
   async register(deviceToken?: string, key?: string, deviceType?: string) {
-    if (!deviceToken) {
+    if (!deviceToken || typeof deviceToken !== 'string') {
       throw new APIError(400, 'device token is empty');
     }
 

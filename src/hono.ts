@@ -7,7 +7,8 @@ import { getTimestamp, validateBasicAuth } from './utils';
 
 const parseParam = (t: string) => {
   try {
-    return decodeURIComponent(t.replaceAll('\\+', '%20'));
+    // upstream uses url.QueryUnescape, which also turns '+' into a space
+    return decodeURIComponent(t.replace(/\+/g, '%20'));
   } catch {
     throw new APIError(400, 'url path parse failed');
   }
@@ -24,6 +25,9 @@ const isJsonContentType = (c: Context) => {
 const parseBody = async <T = Record<string, any>>(c: Context): Promise<T> =>
   isJsonContentType(c) ? await c.req.json() : ((await c.req.parseBody()) as T);
 
+const asString = (value: unknown) =>
+  typeof value === 'string' ? value : undefined;
+
 const lowerCaseKeys = (source: Record<string, any>) => {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(source || {})) {
@@ -36,8 +40,18 @@ const parseQuery = (c: Context) => lowerCaseKeys(c.req.query());
 
 const parseBodyParams = async (c: Context) => {
   try {
-    return lowerCaseKeys(await parseBody<Record<string, any>>(c));
+    const parsed = await parseBody<Record<string, any>>(c);
+    if (
+      isJsonContentType(c) &&
+      (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+    ) {
+      throw new APIError(400, 'request bind failed: invalid JSON body');
+    }
+    return lowerCaseKeys(parsed || {});
   } catch (e) {
+    if (e instanceof APIError) {
+      throw e;
+    }
     if (isJsonContentType(c)) {
       throw new APIError(
         400,
@@ -150,9 +164,9 @@ export const createHono = (options: Options) => {
     const query = parseQuery(c);
     return c.json(
       await api.register(
-        query.device_token || query.devicetoken,
-        query.device_key || query.key,
-        query.device_type || query.devicetype,
+        asString(query.device_token || query.devicetoken),
+        asString(query.device_key || query.key),
+        asString(query.device_type || query.devicetype),
       ),
     );
   });
@@ -177,9 +191,9 @@ export const createHono = (options: Options) => {
     }
     return c.json(
       await api.register(
-        body.device_token || body.devicetoken,
-        body.device_key || body.key,
-        body.device_type || body.devicetype,
+        asString(body.device_token || body.devicetoken),
+        asString(body.device_key || body.key),
+        asString(body.device_type || body.devicetype),
       ),
     );
   });
