@@ -9,8 +9,6 @@
     "test": "rstest",
     "test:watch": "rstest --watch",
     "build:node": "cross-env ENTRY=node rsbuild build",
-    "build:cf": "cross-env ENTRY=cloudflare rsbuild build",
-    "build:eo": "cross-env ENTRY=edgeone rsbuild build",
     "build:esa": "cross-env ENTRY=esa rsbuild build"
   },
   "devDependencies": {
@@ -20,17 +18,13 @@
     "@rstest/core": "^0.7.8",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
-    "@types/fs-extra": "^11.0.4",
     "cross-env": "^10.1.0",
-    "fs-extra": "^11.3.3",
     "happy-dom": "^20.0.11",
     "lint-staged": "^16.2.7",
-    "nanoid": "^5.1.6",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "got": "^14.6.6",
     "hono": "^4.11.3"
   },
   "simple-git-hooks": {

@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 各边缘函数环境上的实现。
+Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在阿里云 ESA 边缘函数环境上的实现。
 
 [GitHub](https://github.com/sylingd/bark-worker-server) [国内镜像](https://gitee.com/sy/bark-worker-server)
 
@@ -12,18 +12,6 @@ Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 
 
 [部署教程](https://github.com/sylingd/bark-worker-server/wiki/%E9%98%BF%E9%87%8C%E4%BA%91-ESA-%E9%83%A8%E7%BD%B2) [国内镜像](https://gitee.com/sy/bark-worker-server/wikis/%E9%98%BF%E9%87%8C%E4%BA%91-ESA-%E9%83%A8%E7%BD%B2)
 
-### EdgeOne
-
-**EdgeOne 边缘节点目前无法直接连接 APNs 服务，需通过 Node Functions 反代，必须配置 URL_PREFIX**
-
-[部署教程](https://github.com/sylingd/bark-worker-server/wiki/EdgeOne-%E9%83%A8%E7%BD%B2) [国内镜像](https://gitee.com/sy/bark-worker-server/wikis/EdgeOne-%E9%83%A8%E7%BD%B2)
-
-### Cloudflare Worker
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fsylingd%2Fbark-worker-server)
-
-[部署教程](https://github.com/sylingd/bark-worker-server/wiki/Cloudflare-Workers-%E9%83%A8%E7%BD%B2) [国内镜像](https://gitee.com/sy/bark-worker-server/wikis/Cloudflare-Workers-%E9%83%A8%E7%BD%B2)
-
 ## 已知问题
 
 * 因平台限制，批量推送功能存在最大上限。
@@ -32,7 +20,7 @@ Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 
 
 ## 配置项
 
-* `DB_NAME` KV 数据库名称。默认在 Cloudflare Workers、EdgeOne 下为 `BARK_KV`，ESA 下为 `bark`
+* `DB_NAME` KV 数据库名称，默认为 `bark`
 * `ALLOW_NEW_DEVICE` 是否允许新设备注册，默认为 `true`
 * `ALLOW_QUERY_NUMS` 是否允许查询设备数量，默认为 `true`
 * `MAX_BATCH_PUSH_COUNT` 批量推送最大数量，默认不限制

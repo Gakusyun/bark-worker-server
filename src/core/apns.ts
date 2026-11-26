@@ -1,4 +1,3 @@
-import type { Context } from 'hono';
 import type { APNsResponse, DBAdapter, NullLike, Options } from './type';
 import { base64ToArrayBuffer, getTimestamp } from './utils';
 
@@ -106,7 +105,6 @@ export const push = async (
   deviceToken: string,
   headers: Record<string, string>,
   aps: any,
-  ctx?: Context,
 ): Promise<APNsResponse> => {
   const token = await getAuthToken(options.db);
 
@@ -125,17 +123,6 @@ export const push = async (
       'content-type': 'application/json',
     }),
   );
-
-  if (options.requestAPNs) {
-    try {
-      return await options.requestAPNs(deviceToken, finalHeaders, aps, ctx);
-    } catch (e) {
-      return {
-        status: 500,
-        message: (e as Error).message,
-      };
-    }
-  }
 
   try {
     return await requestAPNs(

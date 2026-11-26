@@ -51,105 +51,81 @@ const parseQuery = (c: Context, exclude?: Array<keyof PushParameters>) => {
 const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...parseQuery(c, ['device_key']),
-          device_key: parseParam(c.req.param('device_key')),
-        },
-        c,
-      ),
+      await api.push({
+        ...parseQuery(c, ['device_key']),
+        device_key: parseParam(c.req.param('device_key')),
+      }),
     ),
   );
   app.post('/:device_key', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...(await parseBody(c)),
-          device_key: parseParam(c.req.param('device_key')),
-        },
-        c,
-      ),
+      await api.push({
+        ...(await parseBody(c)),
+        device_key: parseParam(c.req.param('device_key')),
+      }),
     ),
   );
 
   app.get('/:device_key/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...parseQuery(c, ['device_key', 'body']),
-          device_key: parseParam(c.req.param('device_key')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...parseQuery(c, ['device_key', 'body']),
+        device_key: parseParam(c.req.param('device_key')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
   app.post('/:device_key/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...(await parseBody(c)),
-          device_key: parseParam(c.req.param('device_key')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...(await parseBody(c)),
+        device_key: parseParam(c.req.param('device_key')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
 
   app.get('/:device_key/:title/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...parseQuery(c, ['device_key', 'title', 'body']),
-          device_key: parseParam(c.req.param('device_key')),
-          title: parseParam(c.req.param('title')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...parseQuery(c, ['device_key', 'title', 'body']),
+        device_key: parseParam(c.req.param('device_key')),
+        title: parseParam(c.req.param('title')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
   app.post('/:device_key/:title/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...(await parseBody(c)),
-          device_key: parseParam(c.req.param('device_key')),
-          title: parseParam(c.req.param('title')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...(await parseBody(c)),
+        device_key: parseParam(c.req.param('device_key')),
+        title: parseParam(c.req.param('title')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
 
   app.get('/:device_key/:title/:subtitle/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...parseQuery(c, ['device_key', 'title', 'subtitle', 'body']),
-          device_key: parseParam(c.req.param('device_key')),
-          title: parseParam(c.req.param('title')),
-          subtitle: parseParam(c.req.param('subtitle')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...parseQuery(c, ['device_key', 'title', 'subtitle', 'body']),
+        device_key: parseParam(c.req.param('device_key')),
+        title: parseParam(c.req.param('title')),
+        subtitle: parseParam(c.req.param('subtitle')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
   app.post('/:device_key/:title/:subtitle/:body', async (c) =>
     c.json(
-      await api.push(
-        {
-          ...(await parseBody(c)),
-          device_key: parseParam(c.req.param('device_key')),
-          title: parseParam(c.req.param('title')),
-          subtitle: parseParam(c.req.param('subtitle')),
-          body: parseParam(c.req.param('body')),
-        },
-        c,
-      ),
+      await api.push({
+        ...(await parseBody(c)),
+        device_key: parseParam(c.req.param('device_key')),
+        title: parseParam(c.req.param('title')),
+        subtitle: parseParam(c.req.param('subtitle')),
+        body: parseParam(c.req.param('body')),
+      }),
     ),
   );
 };
@@ -198,9 +174,7 @@ export const createHono = <T extends Env>(options: Options) => {
   });
 
   // base push
-  router.post('/push', async (c) =>
-    c.json(await api.push(await parseBody(c), c)),
-  );
+  router.post('/push', async (c) => c.json(await api.push(await parseBody(c))));
 
   // compat v1 API
   registerV1(router as unknown as Hono, api);

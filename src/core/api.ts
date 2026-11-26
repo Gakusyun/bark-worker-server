@@ -1,4 +1,3 @@
-import type { Context } from 'hono';
 import { push, regenerateAuthToken } from './apns';
 import type { DBAdapter, Options } from './type';
 import { getTimestamp, newShortUUID } from './utils';
@@ -115,7 +114,7 @@ export class API {
     };
   }
 
-  async push(parameters: PushParameters, ctx?: Context) {
+  async push(parameters: PushParameters) {
     // batch
     if (
       Array.isArray(parameters.device_keys) &&
@@ -137,7 +136,7 @@ export class API {
         data: await Promise.all(
           parameters.device_keys.map(async (deviceKey) => {
             try {
-              const res = await this.pushOne(deviceKey, parameters, ctx);
+              const res = await this.pushOne(deviceKey, parameters);
               return {
                 code: res.code,
                 device_key: deviceKey,
@@ -160,14 +159,10 @@ export class API {
     if (!deviceKey) {
       throw new APIError(400, 'device key is empty');
     }
-    return this.pushOne(deviceKey, parameters, ctx);
+    return this.pushOne(deviceKey, parameters);
   }
 
-  private async pushOne(
-    deviceKey: string,
-    parameters: PushParameters,
-    ctx?: Context,
-  ) {
+  private async pushOne(deviceKey: string, parameters: PushParameters) {
     const deviceToken = await this.db.deviceTokenByKey(deviceKey);
     if (deviceToken === undefined) {
       throw new APIError(
@@ -284,7 +279,7 @@ export class API {
         // Token expired, try again
         await regenerateAuthToken(this.db);
         return handleResponse(
-          await push(this.options, deviceToken, headers, aps, ctx),
+          await push(this.options, deviceToken, headers, aps),
           retryCount + 1,
         );
       }
@@ -292,7 +287,7 @@ export class API {
       throw new APIError(response.status, `push failed: ${response.message}`);
     };
 
-    const response = await push(this.options, deviceToken, headers, aps, ctx);
+    const response = await push(this.options, deviceToken, headers, aps);
 
     return await handleResponse(response);
   }
