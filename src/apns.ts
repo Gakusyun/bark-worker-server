@@ -1,8 +1,12 @@
 import type { APNsResponse, DBAdapter, NullLike, Options } from './type';
 import { base64ToArrayBuffer, getTimestamp } from './utils';
 
-const TOPIC = 'me.fin.bark';
+export const IOS_TOPIC = 'me.fin.bark';
+export const WATCHOS_TOPIC = 'me.fin.bark.watch';
 export const APNS_HOST_NAME = 'api.push.apple.com';
+
+const base64Url = (value: string) =>
+  value.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const TOKEN_EXPIRE_TIME = 3000000; // 有效期是一小时，向下取一点
 const generateAuthToken = async () => {
   const TOKEN_KEY = `-----BEGIN PRIVATE KEY-----
@@ -29,14 +33,12 @@ const generateAuthToken = async () => {
   const AUTH_KEY_ID = 'LH4T9V5U4R';
   // Generate the JWT token
   const JWT_ISSUE_TIME = getTimestamp();
-  const JWT_HEADER = btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID }))
-    .replace('+', '-')
-    .replace('/', '_')
-    .replace(/=+$/, '');
-  const JWT_CLAIMS = btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME }))
-    .replace('+', '-')
-    .replace('/', '_')
-    .replace(/=+$/, '');
+  const JWT_HEADER = base64Url(
+    btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID })),
+  );
+  const JWT_CLAIMS = base64Url(
+    btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME })),
+  );
   const JWT_HEADER_CLAIMS = `${JWT_HEADER}.${JWT_CLAIMS}`;
   // Sign
   const jwtArray = new TextEncoder().encode(JWT_HEADER_CLAIMS);
@@ -46,10 +48,9 @@ const generateAuthToken = async () => {
     jwtArray,
   );
   const signatureArray = new Uint8Array(signature);
-  const JWT_SIGNED_HEADER_CLAIMS = btoa(String.fromCharCode(...signatureArray))
-    .replace('+', '-')
-    .replace('/', '_')
-    .replace(/=+$/, '');
+  const JWT_SIGNED_HEADER_CLAIMS = base64Url(
+    btoa(String.fromCharCode(...signatureArray)),
+  );
   const AUTHENTICATION_TOKEN = `${JWT_HEADER_CLAIMS}.${JWT_SIGNED_HEADER_CLAIMS}`;
 
   return AUTHENTICATION_TOKEN;
@@ -110,7 +111,7 @@ export const push = async (
 
   const finalHeaders = JSON.parse(
     JSON.stringify({
-      'apns-topic': headers['apns-topic'] || TOPIC,
+      'apns-topic': headers['apns-topic'] || IOS_TOPIC,
       'apns-id': headers['apns-id'] || undefined,
       'apns-collapse-id': headers['apns-collapse-id'] || undefined,
       'apns-priority':

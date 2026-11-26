@@ -1,10 +1,39 @@
-import type { DBAdapter } from './type';
+import type { DBAdapter, DeviceRecord } from './type';
 
 export interface BasicKV {
   get(key: string, options?: { type: 'json' | 'text' }): Promise<any>;
   put(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
 }
+
+// keep read and write paths consistent, and avoid characters that are
+// awkward in KV keys
+const sanitizeDeviceKey = (key: string) =>
+  (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
+
+const decodeDeviceRecord = (raw: string): DeviceRecord => {
+  // legacy value: the KV value was a bare device token
+  if (!raw.startsWith('{')) {
+    return { token: raw, type: 'ios' };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'string') {
+      return { token: parsed, type: 'ios' };
+    }
+    if (parsed && typeof parsed.token === 'string') {
+      return {
+        token: parsed.token,
+        type: parsed.type === 'watchos' ? 'watchos' : 'ios',
+        updated_at:
+          typeof parsed.updated_at === 'number' ? parsed.updated_at : undefined,
+      };
+    }
+  } catch {
+    // fall through to the bare token fallback
+  }
+  return { token: raw, type: 'ios' };
+};
 
 export class KVAdapter implements DBAdapter {
   kv: BasicKV;
@@ -25,32 +54,42 @@ export class KVAdapter implements DBAdapter {
   }
 
   async deviceTokenByKey(key: string) {
-    const deviceKey =
-      (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
-    const devices = await this.kv.get(`device_${deviceKey}`, { type: 'text' });
-    return devices;
+    const raw = await this.kv.get(`device_${sanitizeDeviceKey(key)}`, {
+      type: 'text',
+    });
+    if (raw === undefined || raw === null) {
+      return raw;
+    }
+    if (raw === '') {
+      return { token: '', type: 'ios' };
+    }
+    return decodeDeviceRecord(raw);
   }
 
-  async saveDeviceTokenByKey(key: string, token: string) {
-    if (!token) {
-      return this.deleteDeviceByKey(key);
+  async saveDeviceTokenByKey(key: string, record: DeviceRecord) {
+    const deviceToken = (record.token || '').replace(/[^a-z0-9]/g, '') || '';
+    const k = `device_${sanitizeDeviceKey(key)}`;
+    const existing = await this.kv.get(k, { type: 'text' });
+    if (!existing) {
+      await this.updateCount(1);
     }
-    const deviceToken = (token || '').replace(/[^a-z0-9]/g, '') || '';
-    const k = `device_${key}`;
-    // updateCount
-    this.kv.get(k).then((value) => {
-      if (!value) {
-        this.updateCount(1);
-      }
-    });
-    return this.kv.put(k, deviceToken);
+    return this.kv.put(
+      k,
+      JSON.stringify({
+        token: deviceToken,
+        type: record.type,
+        updated_at: record.updated_at,
+      }),
+    );
   }
 
   async deleteDeviceByKey(key: string) {
-    const deviceKey =
-      (key || '').replace(/[^a-zA-Z0-9]/g, '') || '_PLACE_HOLDER_';
-    this.updateCount(-1);
-    return this.kv.delete(`device_${deviceKey}`);
+    const k = `device_${sanitizeDeviceKey(key)}`;
+    const existing = await this.kv.get(k, { type: 'text' });
+    if (existing) {
+      await this.updateCount(-1);
+    }
+    return this.kv.delete(k);
   }
 
   async saveAuthorizationToken(token: string, ttl: number) {
@@ -60,7 +99,7 @@ export class KVAdapter implements DBAdapter {
 
   async getAuthorizationToken() {
     const res = await this.kv.get('authToken');
-    if (!res || res.expireAt > Date.now()) {
+    if (!res || res.expireAt <= Date.now()) {
       return undefined;
     }
     return res.token;
