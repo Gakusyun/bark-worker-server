@@ -1,7 +1,7 @@
 import { type Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { API, APIError } from './api';
-import { handleMcpRequest } from './mcp';
+import { handleMcpHttp } from './mcp';
 import type { Options } from './type';
 import { getTimestamp, validateBasicAuth } from './utils';
 
@@ -13,10 +13,16 @@ const parseParam = (t: string) => {
   }
 };
 
-const parseBody = async <T = Record<string, any>>(c: Context): Promise<T> => {
-  const isJSON = c.req.header('Content-Type')?.startsWith('application/json');
-  return isJSON ? await c.req.json() : ((await c.req.parseBody()) as T);
+const isJsonContentType = (c: Context) => {
+  const mediaType = (c.req.header('Content-Type') || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+  return mediaType === 'application/json' || mediaType.endsWith('+json');
 };
+
+const parseBody = async <T = Record<string, any>>(c: Context): Promise<T> =>
+  isJsonContentType(c) ? await c.req.json() : ((await c.req.parseBody()) as T);
 
 const lowerCaseKeys = (source: Record<string, any>) => {
   const result: Record<string, any> = {};
@@ -28,8 +34,20 @@ const lowerCaseKeys = (source: Record<string, any>) => {
 
 const parseQuery = (c: Context) => lowerCaseKeys(c.req.query());
 
-const parseBodyParams = async (c: Context) =>
-  lowerCaseKeys(await parseBody<Record<string, any>>(c));
+const parseBodyParams = async (c: Context) => {
+  try {
+    return lowerCaseKeys(await parseBody<Record<string, any>>(c));
+  } catch (e) {
+    if (isJsonContentType(c)) {
+      throw new APIError(
+        400,
+        `request bind failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    // upstream ignores malformed form/multipart bodies
+    return {};
+  }
+};
 
 const parsePath = (c: Context, keys: string[]) => {
   const result: Record<string, any> = {};
@@ -43,81 +61,55 @@ const parsePath = (c: Context, keys: string[]) => {
 };
 
 const registerV1 = async (app: Hono, api: API) => {
-  app.get('/:device_key', async (c) =>
+  const pushGet = (pathKeys: string[]) => async (c: Context) =>
     c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...parsePath(c, ['device_key']),
-      }),
-    ),
+      await api.push(
+        {
+          ...parseQuery(c),
+          ...parsePath(c, pathKeys),
+        },
+        { batch: false },
+      ),
+    );
+
+  const pushPost = (pathKeys: string[]) => async (c: Context) => {
+    const isJson = isJsonContentType(c);
+    const body = await parseBodyParams(c);
+    const pathParams = parsePath(c, pathKeys);
+    const params = isJson
+      ? { ...body, ...parseQuery(c), ...pathParams }
+      : { ...parseQuery(c), ...body, ...pathParams };
+    return c.json(await api.push(params, { batch: isJson }));
+  };
+
+  app.get('/:device_key', pushGet(['device_key']));
+  app.post('/:device_key', pushPost(['device_key']));
+
+  app.get('/:device_key/:body', pushGet(['device_key', 'body']));
+  app.post('/:device_key/:body', pushPost(['device_key', 'body']));
+
+  app.get(
+    '/:device_key/:title/:body',
+    pushGet(['device_key', 'title', 'body']),
   );
-  app.post('/:device_key', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...(await parseBodyParams(c)),
-        ...parsePath(c, ['device_key']),
-      }),
-    ),
+  app.post(
+    '/:device_key/:title/:body',
+    pushPost(['device_key', 'title', 'body']),
   );
 
-  app.get('/:device_key/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...parsePath(c, ['device_key', 'body']),
-      }),
-    ),
+  app.get(
+    '/:device_key/:title/:subtitle/:body',
+    pushGet(['device_key', 'title', 'subtitle', 'body']),
   );
-  app.post('/:device_key/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...(await parseBodyParams(c)),
-        ...parsePath(c, ['device_key', 'body']),
-      }),
-    ),
-  );
-
-  app.get('/:device_key/:title/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...parsePath(c, ['device_key', 'title', 'body']),
-      }),
-    ),
-  );
-  app.post('/:device_key/:title/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...(await parseBodyParams(c)),
-        ...parsePath(c, ['device_key', 'title', 'body']),
-      }),
-    ),
-  );
-
-  app.get('/:device_key/:title/:subtitle/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...parsePath(c, ['device_key', 'title', 'subtitle', 'body']),
-      }),
-    ),
-  );
-  app.post('/:device_key/:title/:subtitle/:body', async (c) =>
-    c.json(
-      await api.push({
-        ...parseQuery(c),
-        ...(await parseBodyParams(c)),
-        ...parsePath(c, ['device_key', 'title', 'subtitle', 'body']),
-      }),
-    ),
+  app.post(
+    '/:device_key/:title/:subtitle/:body',
+    pushPost(['device_key', 'title', 'subtitle', 'body']),
   );
 };
 
-// same as upstream: these paths stay public when Basic Auth is enabled
-const AUTH_WHITELIST = ['/ping', '/register', '/healthz'];
+// same as upstream: these paths stay public when Basic Auth is enabled.
+// Upstream's middleware pattern also leaves the root path unprotected.
+const AUTH_WHITELIST = ['/', '/ping', '/register', '/healthz'];
 
 const normalizeUrlPrefix = (prefix?: string) =>
   (prefix || '').replace(/\/+$/, '');
@@ -155,17 +147,34 @@ export const createHono = (options: Options) => {
   });
 
   router.get('/register', async (c) => {
+    const query = parseQuery(c);
     return c.json(
       await api.register(
-        c.req.query('device_token') || c.req.query('devicetoken'),
-        c.req.query('device_key') || c.req.query('key'),
-        c.req.query('device_type') || c.req.query('devicetype'),
+        query.device_token || query.devicetoken,
+        query.device_key || query.key,
+        query.device_type || query.devicetype,
       ),
     );
   });
 
   router.post('/register', async (c) => {
-    const body = await parseBody(c);
+    const contentType = (c.req.header('Content-Type') || '').toLowerCase();
+    const supported =
+      isJsonContentType(c) ||
+      contentType.startsWith('application/x-www-form-urlencoded') ||
+      contentType.startsWith('multipart/form-data');
+    if (!supported) {
+      throw new APIError(400, 'request bind failed2: Unprocessable Entity');
+    }
+    let body: Record<string, any>;
+    try {
+      body = lowerCaseKeys(await parseBody<Record<string, any>>(c));
+    } catch (e) {
+      throw new APIError(
+        400,
+        `request bind failed2: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
     return c.json(
       await api.register(
         body.device_token || body.devicetoken,
@@ -185,51 +194,58 @@ export const createHono = (options: Options) => {
 
   router.all('/info', async (c) => c.json(await api.info()));
 
-  // base push
-  router.post('/push', async (c) =>
-    c.json(
-      await api.push({
-        ...(await parseBodyParams(c)),
-        ...parseQuery(c),
-      }),
-    ),
-  );
+  // base push: upstream dispatches by Content-Type, JSON uses the V2 code
+  // path (body < query, batch enabled), everything else uses V1.
+  router.post('/push', async (c) => {
+    const isJson = isJsonContentType(c);
+    const body = await parseBodyParams(c);
+    const params = isJson
+      ? { ...body, ...parseQuery(c) }
+      : { ...parseQuery(c), ...body };
+    return c.json(await api.push(params, { batch: isJson }));
+  });
 
-  // MCP (Streamable HTTP, stateless JSON responses). Must be registered
-  // before the V1 catch-all routes.
+  // MCP (Streamable HTTP, JSON responses). Must be registered before the V1
+  // catch-all routes.
   const handleMcp = (fixedDeviceKey?: string) => async (c: Context) => {
     let body: any;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json(
-        {
-          jsonrpc: '2.0',
-          id: null,
-          error: { code: -32700, message: 'parse error' },
-        },
-        400,
-      );
+    let parseError = false;
+    if (c.req.method === 'POST') {
+      try {
+        body = JSON.parse(await c.req.text());
+      } catch {
+        parseError = true;
+      }
     }
-    const result = await handleMcpRequest(body, api, fixedDeviceKey);
-    if (result === undefined) {
-      return c.body(null, 202);
+    const result = await handleMcpHttp(
+      {
+        method: c.req.method,
+        contentType: c.req.header('Content-Type'),
+        sessionId: c.req.header('Mcp-Session-Id'),
+        body,
+        parseError,
+      },
+      api,
+      fixedDeviceKey,
+    );
+    if (result.headers) {
+      for (const [key, value] of Object.entries(result.headers)) {
+        c.header(key, value);
+      }
     }
-    return c.json(result);
-  };
-  const rejectSse = (c: Context) => {
-    c.header('Allow', 'POST');
-    return c.body(null, 405);
+    if (result.json !== undefined) {
+      return c.json(result.json, result.status as ContentfulStatusCode);
+    }
+    if (result.text !== undefined) {
+      return c.text(result.text, result.status as ContentfulStatusCode);
+    }
+    return c.body(null, result.status as ContentfulStatusCode);
   };
 
-  router.post('/mcp', handleMcp());
-  router.post('/mcp/:device_key', (c) =>
+  router.all('/mcp', handleMcp());
+  router.all('/mcp/:device_key', (c) =>
     handleMcp(parseParam(c.req.param('device_key')))(c),
   );
-  router.get('/mcp', rejectSse);
-  router.get('/mcp/:device_key', rejectSse);
-  router.delete('/mcp', rejectSse);
-  router.delete('/mcp/:device_key', rejectSse);
 
   // compat v1 API
   registerV1(router as unknown as Hono, api);

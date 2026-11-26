@@ -86,10 +86,16 @@ export class API {
       throw new APIError(400, 'device token is invalid');
     }
 
-    if (deviceType && deviceType !== 'ios' && deviceType !== 'watchos') {
-      throw new APIError(400, 'device type is invalid');
+    const normalizedDeviceType = (deviceType || '').toLowerCase();
+    if (
+      normalizedDeviceType &&
+      normalizedDeviceType !== 'ios' &&
+      normalizedDeviceType !== 'watchos'
+    ) {
+      throw new APIError(400, `invalid device type: ${deviceType}`);
     }
-    const type: DeviceType = deviceType === 'watchos' ? 'watchos' : 'ios';
+    const type: DeviceType =
+      normalizedDeviceType === 'watchos' ? 'watchos' : 'ios';
 
     if (!(key && (await this.db.deviceTokenByKey(key)))) {
       if (this.options.allowNewDevice) {
@@ -115,7 +121,7 @@ export class API {
     const record: DeviceRecord = {
       token: deviceToken,
       type,
-      updated_at: new Date().toISOString(),
+      updated_at: getTimestamp(),
     };
     await this.db.saveDeviceTokenByKey(key, record);
     return buildSuccess({
@@ -128,13 +134,16 @@ export class API {
 
   async checkRegister(deviceKey: string) {
     const record = await this.db.deviceTokenByKey(deviceKey);
-    if (record === undefined || record === null || !record.token) {
-      throw new APIError(400, 'device token not found');
+    if (record === undefined || record === null) {
+      throw new APIError(
+        400,
+        `failed to get [${deviceKey}] device token from database`,
+      );
     }
-    return buildSuccess({
-      device_key: deviceKey,
-      device_type: record.type,
-    });
+    if (!record.token) {
+      throw new APIError(400, 'device token invalid');
+    }
+    return buildSuccess();
   }
 
   ping() {
@@ -160,57 +169,58 @@ export class API {
   private normalizeParameters(parameters: PushParameters) {
     const normalized: Record<string, any> = {};
     for (const [key, value] of Object.entries(parameters || {})) {
-      if (value !== undefined && value !== null) {
-        normalized[key.toLowerCase()] = value;
+      if (value === undefined || value === null) {
+        continue;
       }
-    }
-
-    const extParams = normalized.ext_params;
-    if (
-      extParams &&
-      typeof extParams === 'object' &&
-      !Array.isArray(extParams)
-    ) {
-      for (const [key, value] of Object.entries(extParams)) {
-        if (value !== undefined && value !== null) {
-          normalized[key.toLowerCase()] = value;
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        // upstream flattens every object-valued parameter into ExtParams
+        for (const [nestedKey, nestedValue] of Object.entries(value)) {
+          if (nestedValue !== undefined) {
+            normalized[nestedKey.toLowerCase()] = nestedValue;
+          }
         }
+      } else {
+        normalized[key.toLowerCase()] = value;
       }
     }
     return normalized;
   }
 
-  async push(rawParameters: PushParameters) {
-    const parameters = this.normalizeParameters(rawParameters);
-
-    // upstream accepts both an array and a comma-separated string
-    if (typeof parameters.device_keys === 'string') {
-      parameters.device_keys = parameters.device_keys
-        .split(',')
-        .map((key) => key.trim())
-        .filter(Boolean);
+  async push(rawParameters: PushParameters, options: { batch?: boolean } = {}) {
+    const input: Record<string, any> = {};
+    for (const [key, value] of Object.entries(rawParameters || {})) {
+      input[key.toLowerCase()] = value;
     }
 
-    // batch
-    if (
-      Array.isArray(parameters.device_keys) &&
-      parameters.device_keys.length > 0
-    ) {
-      if (
-        !Number.isNaN(this.options.maxBatchPushCount) &&
-        this.options.maxBatchPushCount > 0
-      ) {
-        if (parameters.device_keys.length > this.options.maxBatchPushCount) {
-          throw new APIError(
-            400,
-            `batch push count exceeds the maximum limit: ${this.options.maxBatchPushCount}`,
-          );
-        }
+    // Batch push is only recognized for JSON (V2) requests, matching
+    // upstream. Both an array and a comma-separated string are accepted.
+    let deviceKeys: string[] = [];
+    if (options.batch !== false && 'device_keys' in input) {
+      const rawKeys = input.device_keys;
+      if (typeof rawKeys === 'string') {
+        deviceKeys = rawKeys.split(',');
+      } else if (Array.isArray(rawKeys)) {
+        deviceKeys = rawKeys.map((key) => String(key));
+      } else {
+        throw new APIError(400, 'invalid type for device_keys');
+      }
+      delete input.device_keys;
+    }
+
+    const parameters = this.normalizeParameters(input);
+
+    if (deviceKeys.length > 0) {
+      const max = this.options.maxBatchPushCount;
+      if (Number.isFinite(max) && max !== -1 && deviceKeys.length > max) {
+        throw new APIError(
+          400,
+          `batch push count exceeds the maximum limit: ${max}`,
+        );
       }
 
       return buildSuccess(
         await Promise.all(
-          parameters.device_keys.map(async (deviceKey) => {
+          deviceKeys.map(async (deviceKey) => {
             try {
               const res = await this.pushOne(deviceKey, parameters);
               return {
@@ -231,7 +241,8 @@ export class API {
       );
     }
 
-    const deviceKey = parameters.device_key;
+    const deviceKey =
+      typeof parameters.device_key === 'string' ? parameters.device_key : '';
     if (!deviceKey) {
       throw new APIError(400, 'device key is empty');
     }
@@ -251,19 +262,28 @@ export class API {
       throw new APIError(400, 'device token invalid');
     }
     const deviceToken = record.token;
-    const title = parameters.title || undefined;
-    const subtitle = parameters.subtitle || undefined;
-    const body = parameters.body || undefined;
+    const title =
+      typeof parameters.title === 'string' && parameters.title
+        ? parameters.title
+        : undefined;
+    const subtitle =
+      typeof parameters.subtitle === 'string' && parameters.subtitle
+        ? parameters.subtitle
+        : undefined;
+    const body =
+      typeof parameters.body === 'string' && parameters.body
+        ? parameters.body
+        : undefined;
     const deletePush = isDelete(parameters.delete);
 
-    let sound = parameters.sound ? String(parameters.sound) : undefined;
-    if (sound) {
-      if (!sound.endsWith('.caf')) {
-        sound += '.caf';
-      }
-    } else {
-      sound = '1107';
+    let sound = '1107';
+    if (typeof parameters.sound === 'string') {
+      sound = parameters.sound.endsWith('.caf')
+        ? parameters.sound
+        : `${parameters.sound}.caf`;
     }
+    const group =
+      typeof parameters.group === 'string' ? parameters.group : undefined;
 
     // https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification
     const aps: Record<string, any> = {
@@ -279,7 +299,7 @@ export class API {
               body: !title && !subtitle && !body ? 'Empty Message' : body,
             },
             sound: sound,
-            'thread-id': parameters.group,
+            'thread-id': group,
             category: 'myNotificationCategory',
             'mutable-content': 1,
           },
@@ -287,17 +307,12 @@ export class API {
 
     // Everything that is not part of the APNs envelope is forwarded as an
     // extension parameter, so ttl and custom parameters reach the client.
-    const reserved = new Set([
-      'device_key',
-      'device_keys',
-      'ext_params',
-      'title',
-      'subtitle',
-      'body',
-      'sound',
-    ]);
+    const specialStringKeys = new Set(['title', 'subtitle', 'body', 'sound']);
     for (const [key, value] of Object.entries(parameters)) {
-      if (reserved.has(key) || value === undefined || value === null) {
+      if (key === 'device_key' || key === 'ext_params') {
+        continue;
+      }
+      if (specialStringKeys.has(key) && typeof value === 'string') {
         continue;
       }
       aps[key] = String(value);
@@ -307,12 +322,8 @@ export class API {
       'apns-push-type': deletePush ? 'background' : 'alert',
       'apns-topic': record.type === 'watchos' ? WATCHOS_TOPIC : IOS_TOPIC,
     };
-    if (parameters.id) {
-      headers['apns-collapse-id'] = String(parameters.id);
-    }
-    const ttl = Number(parameters.ttl);
-    if (Number.isFinite(ttl) && ttl > 0) {
-      headers['apns-expiration'] = String(getTimestamp() + ttl);
+    if (typeof parameters.id === 'string' && parameters.id) {
+      headers['apns-collapse-id'] = parameters.id;
     }
 
     const handleResponse = async (
@@ -326,7 +337,13 @@ export class API {
         resp.status === 410 ||
         (resp.status === 400 && resp.message.includes('BadDeviceToken'))
       ) {
-        await this.db.deleteDeviceByKey(deviceKey);
+        // Keep the device key around like upstream does, but clear the
+        // invalid token so it can be replaced by a new registration.
+        await this.db.saveDeviceTokenByKey(deviceKey, {
+          token: '',
+          type: record.type,
+          updated_at: getTimestamp(),
+        });
       }
 
       if (

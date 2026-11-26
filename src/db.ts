@@ -26,7 +26,7 @@ const decodeDeviceRecord = (raw: string): DeviceRecord => {
         token: parsed.token,
         type: parsed.type === 'watchos' ? 'watchos' : 'ios',
         updated_at:
-          typeof parsed.updated_at === 'string' ? parsed.updated_at : undefined,
+          typeof parsed.updated_at === 'number' ? parsed.updated_at : undefined,
       };
     }
   } catch {
@@ -67,9 +67,6 @@ export class KVAdapter implements DBAdapter {
   }
 
   async saveDeviceTokenByKey(key: string, record: DeviceRecord) {
-    if (!record.token) {
-      return this.deleteDeviceByKey(key);
-    }
     const deviceToken = (record.token || '').replace(/[^a-z0-9]/g, '') || '';
     const k = `device_${sanitizeDeviceKey(key)}`;
     const existing = await this.kv.get(k, { type: 'text' });

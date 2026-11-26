@@ -5,7 +5,7 @@ export type DeviceType = 'ios' | 'watchos';
 export interface DeviceRecord {
   token: string;
   type: DeviceType;
-  updated_at?: string;
+  updated_at?: number;
 }
 
 export interface DBAdapter {
