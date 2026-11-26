@@ -1,6 +1,7 @@
 import { type Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { API, APIError } from './api';
+import { handleMcpRequest } from './mcp';
 import type { Options } from './type';
 import { getTimestamp, validateBasicAuth } from './utils';
 
@@ -193,6 +194,42 @@ export const createHono = (options: Options) => {
       }),
     ),
   );
+
+  // MCP (Streamable HTTP, stateless JSON responses). Must be registered
+  // before the V1 catch-all routes.
+  const handleMcp = (fixedDeviceKey?: string) => async (c: Context) => {
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(
+        {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'parse error' },
+        },
+        400,
+      );
+    }
+    const result = await handleMcpRequest(body, api, fixedDeviceKey);
+    if (result === undefined) {
+      return c.body(null, 202);
+    }
+    return c.json(result);
+  };
+  const rejectSse = (c: Context) => {
+    c.header('Allow', 'POST');
+    return c.body(null, 405);
+  };
+
+  router.post('/mcp', handleMcp());
+  router.post('/mcp/:device_key', (c) =>
+    handleMcp(parseParam(c.req.param('device_key')))(c),
+  );
+  router.get('/mcp', rejectSse);
+  router.get('/mcp/:device_key', rejectSse);
+  router.delete('/mcp', rejectSse);
+  router.delete('/mcp/:device_key', rejectSse);
 
   // compat v1 API
   registerV1(router as unknown as Hono, api);
