@@ -1,4 +1,4 @@
-import { type Context, type Env, Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { API, APIError, type PushParameters } from './api';
 import type { Options } from './type';
@@ -130,10 +130,10 @@ const registerV1 = async (app: Hono, api: API) => {
   );
 };
 
-export const createHono = <T extends Env>(options: Options) => {
+export const createHono = (options: Options) => {
   const api = new API(options);
 
-  const app = new Hono<T>();
+  const app = new Hono();
 
   const router = app.basePath(options.urlPrefix || '/');
 

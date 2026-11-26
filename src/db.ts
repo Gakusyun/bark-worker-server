@@ -1,4 +1,4 @@
-import type { DBAdapter } from '../type';
+import type { DBAdapter } from './type';
 
 export interface BasicKV {
   get(key: string, options?: { type: 'json' | 'text' }): Promise<any>;

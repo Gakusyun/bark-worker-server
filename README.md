@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在阿里云 ESA 边缘函数环境上的实现。
+Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在阿里云 ESA 边缘函数上的实现。
 
 [GitHub](https://github.com/sylingd/bark-worker-server) [国内镜像](https://gitee.com/sy/bark-worker-server)
 
@@ -12,6 +12,15 @@ Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 
 
 [部署教程](https://github.com/sylingd/bark-worker-server/wiki/%E9%98%BF%E9%87%8C%E4%BA%91-ESA-%E9%83%A8%E7%BD%B2) [国内镜像](https://gitee.com/sy/bark-worker-server/wikis/%E9%98%BF%E9%87%8C%E4%BA%91-ESA-%E9%83%A8%E7%BD%B2)
 
+## 本地构建
+
+```bash
+pnpm install
+pnpm build
+```
+
+构建产物为 `dist/index.js`，ESA 部署配置见 [`esa.jsonc`](./esa.jsonc)。
+
 ## 已知问题
 
 * 因平台限制，批量推送功能存在最大上限。
@@ -19,6 +28,8 @@ Bark Worker Server 是一个 [Bark-Server](https://github.com/Finb/bark-server) 
 * 设备计数并不准确，仅供测试数据库使用，请勿依赖此数据。
 
 ## 配置项
+
+以下配置项在构建时注入，需在部署平台的构建环境变量中设置。
 
 * `DB_NAME` KV 数据库名称，默认为 `bark`
 * `ALLOW_NEW_DEVICE` 是否允许新设备注册，默认为 `true`

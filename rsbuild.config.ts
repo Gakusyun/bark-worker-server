@@ -1,8 +1,20 @@
 import { defineConfig, type RsbuildConfig } from '@rsbuild/core';
 
-const defines: Record<string, string> = {
-  'process.env.ENTRY': JSON.stringify(process.env.ENTRY),
-};
+const defines: Record<string, string> = {};
+
+for (const key of [
+  'URL_PREFIX',
+  'MAX_BATCH_PUSH_COUNT',
+  'DB_NAME',
+  'ALLOW_NEW_DEVICE',
+  'ALLOW_QUERY_NUMS',
+  'BASIC_AUTH',
+  'APNS_URL',
+]) {
+  defines[`process.env.${key}`] = process.env[key]
+    ? JSON.stringify(process.env[key])
+    : 'undefined';
+}
 
 const config: RsbuildConfig = {
   output: {
@@ -19,7 +31,6 @@ const config: RsbuildConfig = {
     polyfill: 'off',
     sourceMap: false,
     minify: false,
-    externals: ['node:process'],
   },
   performance: {
     chunkSplit: {
@@ -28,8 +39,8 @@ const config: RsbuildConfig = {
   },
   source: {
     entry: {
-      handler: {
-        import: `./src/entry/${process.env.ENTRY}.ts`,
+      index: {
+        import: './src/index.ts',
         html: false,
       },
     },
@@ -50,26 +61,6 @@ const config: RsbuildConfig = {
     },
   },
 };
-
-if (process.env.ENTRY === 'node') {
-  config.output!.target = 'node';
-}
-
-if (process.env.ENTRY === 'esa') {
-  [
-    'URL_PREFIX',
-    'MAX_BATCH_PUSH_COUNT',
-    'DB_NAME',
-    'ALLOW_NEW_DEVICE',
-    'ALLOW_QUERY_NUMS',
-    'BASIC_AUTH',
-    'APNS_URL',
-  ].forEach((key) => {
-    defines[`process.env.${key}`] = process.env[key]
-      ? JSON.stringify(process.env[key])
-      : 'undefined';
-  });
-}
 
 // Docs: https://rsbuild.rs/config/
 export default defineConfig(config);
