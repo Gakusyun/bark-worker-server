@@ -1,5 +1,5 @@
-import { push, regenerateAuthToken } from './apns';
-import type { DBAdapter, Options } from './type';
+import { IOS_TOPIC, push, regenerateAuthToken, WATCHOS_TOPIC } from './apns';
+import type { DBAdapter, DeviceRecord, DeviceType, Options } from './type';
 import { getTimestamp, newShortUUID } from './utils';
 
 // Injected by rsbuild at build time. The fallback keeps direct source imports
@@ -65,7 +65,7 @@ export class API {
     this.options = options;
   }
 
-  async register(deviceToken?: string, key?: string) {
+  async register(deviceToken?: string, key?: string, deviceType?: string) {
     if (!deviceToken) {
       throw new APIError(400, 'device token is empty');
     }
@@ -73,6 +73,11 @@ export class API {
     if (deviceToken.length > 160) {
       throw new APIError(400, 'device token is invalid');
     }
+
+    if (deviceType && deviceType !== 'ios' && deviceType !== 'watchos') {
+      throw new APIError(400, 'device type is invalid');
+    }
+    const type: DeviceType = deviceType === 'watchos' ? 'watchos' : 'ios';
 
     if (!(key && (await this.db.deviceTokenByKey(key)))) {
       if (this.options.allowNewDevice) {
@@ -91,14 +96,21 @@ export class API {
         key: key,
         device_key: key,
         device_token: 'deleted',
+        device_type: type,
       });
     }
 
-    await this.db.saveDeviceTokenByKey(key, deviceToken);
+    const record: DeviceRecord = {
+      token: deviceToken,
+      type,
+      updated_at: new Date().toISOString(),
+    };
+    await this.db.saveDeviceTokenByKey(key, record);
     return buildSuccess({
       key: key,
       device_key: key,
       device_token: deviceToken,
+      device_type: type,
     });
   }
 
@@ -179,17 +191,18 @@ export class API {
   }
 
   private async pushOne(deviceKey: string, parameters: PushParameters) {
-    const deviceToken = await this.db.deviceTokenByKey(deviceKey);
-    if (deviceToken === undefined) {
+    const record = await this.db.deviceTokenByKey(deviceKey);
+    if (record === undefined || record === null) {
       throw new APIError(
         400,
         `failed to get device token: failed to get [${deviceKey}] device token from database`,
       );
     }
 
-    if (!deviceToken) {
+    if (!record.token) {
       throw new APIError(400, 'device token invalid');
     }
+    const deviceToken = record.token;
     const title = parameters.title || undefined;
     const subtitle = parameters.subtitle || undefined;
     const body = parameters.body || undefined;
@@ -263,6 +276,7 @@ export class API {
 
     const headers: Record<string, string> = {
       'apns-push-type': parameters.delete ? 'background' : 'alert',
+      'apns-topic': record.type === 'watchos' ? WATCHOS_TOPIC : IOS_TOPIC,
     };
     if (parameters.id) {
       headers['apns-collapse-id'] = parameters.id;

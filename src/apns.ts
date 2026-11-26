@@ -1,7 +1,8 @@
 import type { APNsResponse, DBAdapter, NullLike, Options } from './type';
 import { base64ToArrayBuffer, getTimestamp } from './utils';
 
-const TOPIC = 'me.fin.bark';
+export const IOS_TOPIC = 'me.fin.bark';
+export const WATCHOS_TOPIC = 'me.fin.bark.watch';
 export const APNS_HOST_NAME = 'api.push.apple.com';
 const TOKEN_EXPIRE_TIME = 3000000; // 有效期是一小时，向下取一点
 const generateAuthToken = async () => {
@@ -110,7 +111,7 @@ export const push = async (
 
   const finalHeaders = JSON.parse(
     JSON.stringify({
-      'apns-topic': headers['apns-topic'] || TOPIC,
+      'apns-topic': headers['apns-topic'] || IOS_TOPIC,
       'apns-id': headers['apns-id'] || undefined,
       'apns-collapse-id': headers['apns-collapse-id'] || undefined,
       'apns-priority':

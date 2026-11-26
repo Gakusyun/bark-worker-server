@@ -173,6 +173,7 @@ export const createHono = (options: Options) => {
       await api.register(
         c.req.query('device_token') || c.req.query('devicetoken'),
         c.req.query('device_key') || c.req.query('key'),
+        c.req.query('device_type') || c.req.query('devicetype'),
       ),
     );
   });
@@ -183,6 +184,7 @@ export const createHono = (options: Options) => {
       await api.register(
         body.device_token || body.devicetoken,
         body.device_key || body.key,
+        body.device_type || body.devicetype,
       ),
     );
   });
